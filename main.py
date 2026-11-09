@@ -65,7 +65,15 @@ def main():
         print(" 1 - 640x480")
         print(" 2 - 1280x720")
         print(" 3 - 1920x1080")
-        print(" Q - Quit\n")
+
+        print("\n[INFO] OCR controls:")
+        print(" O - Single OCR scan")
+        print(" T - Toggle continuous OCR")
+        print(" K - Copy recognized text")
+        print(" S - Save recognized text")
+        print(" V - Read recognized text aloud")
+
+        print("\n Q - Quit\n")
 
         camera_position = available_cameras.index(initial_camera)
 
@@ -88,6 +96,38 @@ def main():
                 state.stop()
                 break
 
+            elif key in (ord("o"), ord("O")):
+                pipeline.request_ocr_scan()
+                print("[INFO] Single OCR scan requested.")
+
+            elif key in (ord("t"), ord("T")):
+                continuous = pipeline.toggle_ocr_continuous()
+
+                print(
+                    f"[INFO] Continuous OCR: "
+                    f"{'ON' if continuous else 'OFF'}"
+                )
+
+            elif key in (ord("k"), ord("K")):
+                if pipeline.copy_ocr_text():
+                    print("[INFO] OCR text copied to clipboard.")
+                else:
+                    print("[WARNING] No OCR text available or clipboard failed.")
+
+            elif key in (ord("s"), ord("S")):
+                saved_path = pipeline.save_ocr_text()
+
+                if saved_path:
+                    print(f"[INFO] OCR text saved to: {saved_path}")
+                else:
+                    print("[WARNING] No OCR text available or saving failed.")
+
+            elif key in (ord("v"), ord("V")):
+                if pipeline.speak_ocr_text():
+                    print("[INFO] Reading OCR text aloud.")
+                else:
+                    print("[WARNING] No OCR text available or speech unavailable.")
+                    
             elif key in (ord("m"), ord("M")):
                 mirror_state = camera.toggle_mirror()
                 print(

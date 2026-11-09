@@ -4,7 +4,8 @@ Coordinates frame capture, object detection (YOLOv8n), obstacle analysis,
 periodic text recognition (EasyOCR), MediaPipe hand tracking, virtual HUD interaction,
 and asynchronous offline audio feedback (pyttsx3).
 """
-
+from datetime import datetime
+from pathlib import Path
 import cv2
 from visionflow.config import (
     FONT_FACE,
@@ -140,10 +141,92 @@ class Pipeline:
         self.ocr_interval = ocr_interval
         self.frame_counter = 0
         self.cached_ocr_results = []
+        self.ocr_continuous = True
+        self.ocr_scan_requested = False 
+
 
         # Hand & HUD interaction state
         self.last_gesture = GESTURE_NONE
         self.hovered_button = None
+
+    
+    def request_ocr_scan(self):
+        """Request a single OCR scan on the next processed frame."""
+        self.ocr_scan_requested = True
+
+    def toggle_ocr_continuous(self):
+        """Enable or disable periodic OCR scanning."""
+        self.ocr_continuous = not self.ocr_continuous
+        return self.ocr_continuous
+
+    def get_ocr_text(self):
+        """Return all currently cached OCR text as a single string."""
+        return "\n".join(
+            item["text"]
+            for item in self.cached_ocr_results
+            if item.get("text")
+        ).strip()
+
+    def copy_ocr_text(self):
+        """Copy the latest OCR text to the system clipboard."""
+        text = self.get_ocr_text()
+
+        if not text:
+            return False
+
+        try:
+            import tkinter as tk
+
+            root = tk.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            root.update()
+            root.destroy()
+
+            return True
+
+        except Exception as e:
+            print(f"[WARNING] Clipboard error: {e}")
+            return False
+
+    def save_ocr_text(self):
+        """Save the latest OCR text into a timestamped TXT file."""
+        text = self.get_ocr_text()
+
+        if not text:
+            return None
+
+        try:
+            output_dir = (
+                Path(__file__).resolve().parents[2]
+                / "outputs"
+                / "ocr"
+            )
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            filename = (
+                f"ocr_{datetime.now():%Y%m%d_%H%M%S}.txt"
+            )
+            file_path = output_dir / filename
+
+            file_path.write_text(text, encoding="utf-8")
+
+            return file_path
+
+        except OSError as e:
+            print(f"[ERROR] Could not save OCR text: {e}")
+            return None
+
+    def speak_ocr_text(self):
+        """Read the latest OCR text aloud on demand."""
+        text = self.get_ocr_text()
+
+        if not text or self.speech_manager is None:
+            return False
+
+        return self.speech_manager.speak(text)
+
 
     def get_hud_buttons(self, frame_width: int):
         """Returns button definitions adapted to current frame width."""
@@ -211,14 +294,26 @@ class Pipeline:
         if self.speech_manager is not None:
             self.speech_manager.speak_obstacle(warning_text)
 
-        # Step 3: Run OCR periodically (every N frames) to avoid dropping camera FPS
+        # Step 3: Run single or continuous OCR scans
         self.frame_counter += 1
-        if self.ocr_reader is not None:
-            if self.frame_counter == 1 or (self.frame_counter % self.ocr_interval == 0):
-                self.cached_ocr_results = self.ocr_reader.read_text(processed)
-                # Audio Feedback for OCR Text Recognition (Milestone 6)
-                if self.speech_manager is not None:
-                    self.speech_manager.speak_ocr(self.cached_ocr_results)
+
+        should_scan = self.ocr_scan_requested or (
+            self.ocr_continuous
+            and (
+                self.frame_counter == 1
+                or self.frame_counter % self.ocr_interval == 0
+            )
+        )
+
+        if self.ocr_reader is not None and should_scan:
+            self.cached_ocr_results = self.ocr_reader.read_text(processed)
+
+            # Reset single scan request after processing
+            self.ocr_scan_requested = False
+
+            # Preserve existing automatic OCR speech during continuous mode
+            if self.ocr_continuous and self.speech_manager is not None:
+                self.speech_manager.speak_ocr(self.cached_ocr_results)
 
         # Step 4: Run Hand Tracking & Gesture Recognition (Milestone 5)
         hands = []
