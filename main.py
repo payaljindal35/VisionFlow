@@ -72,7 +72,8 @@ def main():
         print(" K - Copy recognized text")
         print(" S - Save recognized text")
         print(" V - Read recognized text aloud")
-
+        print("\n[INFO] Statistics controls:")
+        print(" G - Toggle statistics overlay")
         print("\n Q - Quit\n")
 
         camera_position = available_cameras.index(initial_camera)
@@ -127,7 +128,13 @@ def main():
                     print("[INFO] Reading OCR text aloud.")
                 else:
                     print("[WARNING] No OCR text available or speech unavailable.")
-                    
+            elif key in (ord("g"), ord("G")):
+                stats_state = pipeline.toggle_statistics()
+
+                print(
+                    f"[INFO] Statistics overlay: "
+                    f"{'ON' if stats_state else 'OFF'}"
+                )            
             elif key in (ord("m"), ord("M")):
                 mirror_state = camera.toggle_mirror()
                 print(

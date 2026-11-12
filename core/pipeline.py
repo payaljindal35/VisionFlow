@@ -4,6 +4,7 @@ Coordinates frame capture, object detection (YOLOv8n), obstacle analysis,
 periodic text recognition (EasyOCR), MediaPipe hand tracking, virtual HUD interaction,
 and asynchronous offline audio feedback (pyttsx3).
 """
+import time
 from datetime import datetime
 from pathlib import Path
 import cv2
@@ -49,6 +50,13 @@ from visionflow.config import (
     CURSOR_COLOR,
     CURSOR_RADIUS,
     TARGET_HIGHLIGHT_COLOR,
+    STATS_ENABLED_BY_DEFAULT,
+    STATS_BG_COLOR,
+    STATS_TEXT_COLOR,
+    STATS_TITLE_COLOR,
+    STATS_FONT_SCALE,
+    STATS_FONT_THICKNESS,
+    STATS_PADDING
 )
 from visionflow.core.state import AppState
 from visionflow.modules.object_detector import ObjectDetector
@@ -144,6 +152,14 @@ class Pipeline:
         self.ocr_continuous = True
         self.ocr_scan_requested = False 
 
+        # Statistics Overlay state
+        self.stats_enabled = STATS_ENABLED_BY_DEFAULT
+
+        self.start_time = time.perf_counter()
+        self.last_frame_time = None
+
+        self.fps = 0.0
+        self.processing_time_ms = 0.0
 
         # Hand & HUD interaction state
         self.last_gesture = GESTURE_NONE
@@ -227,7 +243,93 @@ class Pipeline:
 
         return self.speech_manager.speak(text)
 
+    def toggle_statistics(self):
+        """Toggle the live statistics overlay."""
+        self.stats_enabled = not self.stats_enabled
+        return self.stats_enabled
 
+    def draw_statistics_overlay(
+        self,
+        frame,
+        detections,
+        ocr_results
+    ):
+        """Draw live performance and detection statistics."""
+
+        frame_height, frame_width = frame.shape[:2]
+
+        # Calculate object statistics
+        total_objects = len(detections)
+
+        person_count = sum(
+            1
+            for det in detections
+            if det.get("class_name", "").lower() == "person"
+        )
+
+        ocr_count = len(ocr_results)
+
+        # Calculate uptime
+        elapsed = int(time.perf_counter() - self.start_time)
+
+        hours = elapsed // 3600
+        minutes = (elapsed % 3600) // 60
+        seconds = elapsed % 60
+
+        uptime = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+        # Prepare statistics
+        stats = [
+            ("STATISTICS", STATS_TITLE_COLOR),
+            (f"FPS: {self.fps:.1f}", STATS_TEXT_COLOR),
+            (f"Processing: {self.processing_time_ms:.1f} ms", STATS_TEXT_COLOR),
+            (f"Objects: {total_objects}", STATS_TEXT_COLOR),
+            (f"People: {person_count}", STATS_TEXT_COLOR),
+            (f"OCR Regions: {ocr_count}", STATS_TEXT_COLOR),
+            (f"Resolution: {frame_width}x{frame_height}", STATS_TEXT_COLOR),
+            (f"Uptime: {uptime}", STATS_TEXT_COLOR),
+        ]
+
+        # Calculate overlay dimensions
+        line_height = 22
+        x, y = 20, 235
+
+        box_width = 230
+        box_height = (
+            len(stats) * line_height
+            + STATS_PADDING * 2
+        )
+
+        # Draw background
+        cv2.rectangle(
+            frame,
+            (x, y),
+            (min(x + box_width, frame_width - 1), min(y + box_height, frame_height - 1)),
+            STATS_BG_COLOR,
+            -1
+        )
+
+        # Draw statistics text
+        for index, (text, color) in enumerate(stats):
+
+            text_y = y + STATS_PADDING + (index + 1) * line_height - 5
+
+            if text_y >= frame_height:
+                break
+
+            cv2.putText(
+                frame,
+                text,
+                (x + STATS_PADDING, text_y),
+                FONT_FACE,
+                STATS_FONT_SCALE,
+                color,
+                STATS_FONT_THICKNESS,
+                cv2.LINE_AA
+            )
+
+        return frame
+    
     def get_hud_buttons(self, frame_width: int):
         """Returns button definitions adapted to current frame width."""
         buttons = []
@@ -266,8 +368,27 @@ class Pipeline:
         if frame is None:
             return None
 
+        frame_start_time = time.perf_counter()
+
+        # Calculate FPS using the time between processed frames
+        if self.last_frame_time is not None:
+            elapsed_frame_time = frame_start_time - self.last_frame_time
+
+            if elapsed_frame_time > 0:
+                current_fps = 1.0 / elapsed_frame_time
+
+                # Smooth FPS to avoid rapid fluctuations
+                self.fps = (
+                    0.9 * self.fps + 0.1 * current_fps
+                    if self.fps > 0
+                    else current_fps
+                )
+
+        self.last_frame_time = frame_start_time
+
         # Work on a copy of the frame to keep original capture intact
         processed = frame.copy()
+        
         frame_height, frame_width = processed.shape[:2]
 
         # Milestone 7: Apply Spotlight Effect when SPOTLIGHT mode is active
@@ -721,4 +842,19 @@ class Pipeline:
                 cv2.LINE_AA,
             )
 
+        # Calculate frame processing time
+        self.processing_time_ms = (
+            time.perf_counter() - frame_start_time
+        ) * 1000
+
+        # Draw statistics overlay when enabled
+        if self.stats_enabled:
+            processed = self.draw_statistics_overlay(
+                processed,
+                detections,
+                self.cached_ocr_results
+            )
+
         return processed
+
+        
