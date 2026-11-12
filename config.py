@@ -146,5 +146,12 @@ INSPECTION_COOLDOWN = 3.0       # Seconds before repeating identical inspection 
 FINGERTIP_SAMPLE_RADIUS = 8     # Pixel radius around fingertip for color sampling
 TARGET_HIGHLIGHT_COLOR = (255, 0, 255) # Bright Magenta highlight for targeted object
 
-
+# Statistics Overlay settings
+STATS_ENABLED_BY_DEFAULT = False
+STATS_BG_COLOR = (25, 25, 25)
+STATS_TEXT_COLOR = (255, 255, 255)
+STATS_TITLE_COLOR = (0, 220, 255)
+STATS_FONT_SCALE = 0.45
+STATS_FONT_THICKNESS = 1
+STATS_PADDING = 8
 
